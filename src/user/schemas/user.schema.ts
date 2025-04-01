@@ -23,6 +23,12 @@ export class UserModel{
 
     @Prop({required: true})
     password: string;
+
+    @Prop({required: true})
+    phone: string;
+
+    @Prop({ default: 'user' })
+    role: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(UserModel);

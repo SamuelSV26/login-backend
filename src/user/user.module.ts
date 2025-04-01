@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { UserModel} from './schemas/user.schema';
 import { UserSchema } from './schemas/user.schema';
 import { EmailModule } from 'src/email/email.module';
+import { TwilioModule } from 'src/twilio/twilio.module';
 
 @Module({
   imports: [
@@ -13,7 +14,8 @@ import { EmailModule } from 'src/email/email.module';
       { name: UserModel.name, schema: UserSchema}
     ]),
     MongooseModule.forFeature([{ name: PendingUser.name, schema: PendingUserSchema }]),
-    EmailModule
+    EmailModule,
+    TwilioModule
   ],
   controllers: [UserController],
   providers: [UserService],

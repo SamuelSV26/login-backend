@@ -13,7 +13,7 @@ export class UserController {
     @HttpCode(HttpStatus.CREATED)
     async create(@Body() createUserDTO: CreateUserDTO): Promise<{ message: string }> {
       await this.userService.create(createUserDTO);
-      return { message: 'Se ha enviado un correo de confirmación' };
+      return { message: 'Se ha enviado el codigo de verificaion' };
     }
 
     @UseGuards(JwtAuthGuard)

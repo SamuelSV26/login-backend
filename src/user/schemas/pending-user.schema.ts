@@ -17,6 +17,9 @@ export class PendingUser extends Document {
     @Prop({ type: String, required: true }) // token to be sent to the user's email
     confirmationToken: string;
 
+    @Prop({ type: String, required: true })
+     phone: string; // phone number of the user
+
     @Prop({ type: Date, default: Date.now, expires: 5 }) // expires in 5 minutes
     createdAt: Date;
 }

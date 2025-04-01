@@ -2,20 +2,21 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { UserDocument, UserModel } from './schemas/user.schema';
-import { PendingUser, PendingUserSchema } from './schemas/pending-user.schema'; // Importa PendingUser
+import { PendingUser } from './schemas/pending-user.schema'; // Importa PendingUser
 import { User, UserService as UserServiceInterface } from './interfaces/user.interface';
 import { CreateUserDTO, UpdateUserDTO, UpdateUserPasswordDTO } from './dto/user.dto';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from 'src/email/email.service';
 import { sendEmailDto } from 'src/email/dto/email.dto';
-import * as crypto from 'crypto'; // Para generar tokens únicos
+import { TwilioService } from 'src/twilio/twilio.service';
 
 @Injectable()
 export class UserService implements UserServiceInterface {
   constructor(
     @InjectModel(UserModel.name) private userModel: Model<UserDocument>,
-    @InjectModel(PendingUser.name) private pendingUserModel: Model<PendingUser>, // Inyecta PendingUser
+    @InjectModel(PendingUser.name) private pendingUserModel: Model<PendingUser>, 
     private emailService: EmailService,
+    private twilioService: TwilioService, 
   ) {}
 
   async findAll(): Promise<User[]> {
@@ -38,47 +39,73 @@ export class UserService implements UserServiceInterface {
       throw new NotFoundException(`El email ya existe`);
     }
   
-    // Verifica si el email ya está pendiente de confirmación
-    const existingPendingUser = await this.pendingUserModel.findOne({ email: createUserDto.email });
-    if (existingPendingUser) {
-      throw new NotFoundException('Ya hay una solicitud pendiente para este email');
-    }
+    if (createUserDto.confirmationMethod !== 1 && createUserDto.confirmationMethod !== 2) {
+      throw new NotFoundException('Método de confirmación no soportado');      
+    }else if (createUserDto.confirmationMethod === 1) {
+      // Verifica si el email ya está pendiente de confirmación
+      const existingPendingUser = await this.pendingUserModel.findOne({ email: createUserDto.email });
+      if (existingPendingUser) {
+        throw new NotFoundException('Ya hay una solicitud pendiente para este email');
+      } else{
+            // Encripta la contraseña
+            const salt = 10;
+            const hashedPassword = await bcrypt.hash(createUserDto.password, salt);
   
-    // Encripta la contraseña
-    const salt = 10;
-    const hashedPassword = await bcrypt.hash(createUserDto.password, salt);
-  
-    // Genera un token único para la confirmación
-    const confirmationToken = crypto.randomBytes(32).toString('hex');
-  
-    // Guarda temporalmente los datos del usuario
-    const pendingUser = new this.pendingUserModel({
-      username: createUserDto.username, 
-      email: createUserDto.email,
-      password: hashedPassword,
-      confirmationToken,
-    });
+            // Genera un token de confirmación único para la confirmación de cuenta en 6 numeros
+            const confirmationToken = Math.floor(100000 + Math.random() * 900000).toString(); // Genera un token de 6 dígitos
 
-    console.log(pendingUser);
-    
-    await pendingUser.save();
+            // empieza el proceso de registro
+            const pendingUser = new this.pendingUserModel({
+              username: createUserDto.username, 
+              email: createUserDto.email,
+              password: hashedPassword,
+              confirmationToken,
+              phone: createUserDto.phone, 
+            });
+          await pendingUser.save();
+          await this.sendConfirmationEmail(createUserDto.email, confirmationToken);
+      }
+    } else if (createUserDto.confirmationMethod === 2) {
+        if (existingUser) {
+          throw new NotFoundException('Ya hay una solicitud pendiente para este numero de telefono');
+        }else{
+          // Encripta la contraseña
+          const salt = 10;
+          const hashedPassword = await bcrypt.hash(createUserDto.password, salt);
   
-    // Envía un correo de confirmación
-    await this.sendConfirmationEmail(createUserDto.email, confirmationToken);
+          // Genera un token de confirmación único para la confirmación de cuenta en 6 numeros
+          const confirmationToken = Math.floor(100000 + Math.random() * 900000).toString(); // Genera un token de 6 dígitos
+
+          // empieza el proceso de registro
+          const pendingUser = new this.pendingUserModel({
+            username: createUserDto.username, 
+            email: createUserDto.email,
+            password: hashedPassword,
+            confirmationToken,
+            phone: createUserDto.phone,
+          });
+          await pendingUser.save();
+          await this.sendConfirmationSMS(createUserDto.phone, confirmationToken);
+        }
+            
+    }
   }
 
-  async confirmAccount(token: string): Promise<User> {
+  async confirmAccount(confirmAccountDto: { token: string }): Promise<User> {
+    const { token } = confirmAccountDto;
+
     // Busca el usuario pendiente por el token
     const pendingUser = await this.pendingUserModel.findOne({ confirmationToken: token });
     if (!pendingUser) {
-      throw new NotFoundException('Token de confirmación inválido o expirado');
+        throw new NotFoundException('Token de confirmación inválido o expirado');
     }
 
     // Crea el usuario en la base de datos
     const newUser = new this.userModel({
-      username: pendingUser.username,
-      email: pendingUser.email,
-      password: pendingUser.password,
+        username: pendingUser.username,
+        email: pendingUser.email,
+        password: pendingUser.password,
+        phone: pendingUser.phone, 
     });
     const savedUser = await newUser.save();
 
@@ -93,21 +120,32 @@ export class UserService implements UserServiceInterface {
       recipients: [email],
       subject: 'Confirmación de cuenta',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 5px;">
-          <h2 style="color: #333; text-align: center;">Verificación de cuenta</h2>
-          <p>Hola,</p>
-          <p>Gracias por registrarte. Para completar tu registro, por favor haz clic en el siguiente enlace:</p>
-          <div style="background-color: #f5f5f5; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0;">
-            <a href="http://localhost:3000/auth/confirm?token=${token}" style="text-decoration: none; color: #fff; background-color: #007bff; padding: 10px 20px; border-radius: 5px;">Confirmar cuenta</a>
-          </div>
-          <p>Este enlace expirará en 5 minutos.</p>
-          <p>Si no has solicitado este registro, por favor ignora este correo.</p>
-          <p>Saludos,<br>El equipo de soporte</p>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 5px; background-color: #ffffff;">
+        <h2 style="color: #333; text-align: center;">Verificación de cuenta</h2>
+        <p style="color: #555; font-size: 16px;">Hola,</p>
+        <p style="color: #555; font-size: 16px;">Gracias por registrarte. Para completar tu registro, por favor utiliza el siguiente código de verificación:</p>
+        <div style="background-color: #f5f5f5; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0; padding: 10px; border-radius: 5px; color: #333;">
+          ${token}
         </div>
-      `,
+        <p style="color: #555; font-size: 16px;">Este código expirará en 5 minutos.</p>
+        <p style="color: #555; font-size: 16px;">Si no has solicitado este registro, por favor ignora este correo.</p>
+        <p style="color: #555; font-size: 16px;">Saludos,<br><strong>El equipo de soporte</strong></p>
+      </div>
+    `,
     };
 
     await this.emailService.sendEmail(emailDto);
+  }
+
+  private async sendConfirmationSMS(phoneNumber: string, token: string): Promise<void> {
+    const messageBody = `Tu código de verificación es: ${token}`;
+    try {
+        await this.twilioService.sendSMS(phoneNumber, messageBody);
+        console.log(`Código de verificación enviado a ${phoneNumber}`);
+    } catch (error) {
+        console.error(`Error al enviar el SMS:`, error);
+        throw new Error('Error al enviar el mensaje SMS');
+    }
   }
 
   async update(id: string, updateUserDto: UpdateUserDTO): Promise<User> {
@@ -155,7 +193,9 @@ export class UserService implements UserServiceInterface {
       email: userDoc.email,
       username: userDoc.username,
       password: userDoc.password,
+      phone: userDoc.phone,
       createdAt: userDoc.createdAt,
+      role: userDoc.role,
     };
   }
 }

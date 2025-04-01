@@ -5,6 +5,9 @@ import { databaseConfig } from './config/database.config';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { EmailModule } from './email/email.module';
+import { TwilioModule } from './twilio/twilio.module';
+import { ProductsModule } from './products/products.module';
+
 
 @Module({
   imports: [
@@ -25,6 +28,8 @@ import { EmailModule } from './email/email.module';
     UserModule,
     AuthModule,
     EmailModule,
+    TwilioModule,
+    ProductsModule,
   ],
 })
 export class AppModule {}

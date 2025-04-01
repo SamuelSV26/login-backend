@@ -1,7 +1,9 @@
-import { Controller, Post, Request, UseGuards, Get, Query } from '@nestjs/common';
+import { Controller, Post, Request, UseGuards, Get, Query, Body } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local.auth.guard';
 import { UserService } from '../user/user.service';
+import { ConfirmAccountDTO } from 'src/user/dto/user.dto';
+import { User } from 'src/user/interfaces/user.interface';
 
 @Controller('auth')
 export class AuthController {
@@ -17,9 +19,8 @@ export class AuthController {
     return this.authService.login(req.user);
   }
 
-  @Get('confirm')
-  async confirm(@Query('token') token: string) {
-    const user = await this.userService.confirmAccount(token);
-    return { message: 'Cuenta confirmada exitosamente', user };
-  }
+  @Post('confirm')
+  async confirmAccount(@Body() confirmAccountDto: ConfirmAccountDTO): Promise<User> {
+    return this.userService.confirmAccount(confirmAccountDto);
+}
 }

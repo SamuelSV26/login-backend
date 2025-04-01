@@ -3,7 +3,9 @@ export interface User{
     username: string;
     email: string;
     password: string;
+    phone: string; 
     createdAt: Date; // Sirve para saber cuando se creo el usuario
+    role: string; // Sirve para saber el rol del usuario, admin o user
 }
 
 export interface UserService{
